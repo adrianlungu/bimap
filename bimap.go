@@ -16,7 +16,7 @@ func NewBiMap[K comparable, V comparable]() *BiMap[K, V] {
 	return &BiMap[K, V]{forward: make(map[K]V), inverse: make(map[V]K), immutable: false}
 }
 
-// NewBiMapFrom returns a new BiMap from a map[K, V]
+// NewBiMapFromMap returns a new BiMap from a map[K, V]
 func NewBiMapFromMap[K comparable, V comparable](forwardMap map[K]V) *BiMap[K, V] {
 	biMap := NewBiMap[K, V]()
 	for k, v := range forwardMap {
@@ -27,98 +27,125 @@ func NewBiMapFromMap[K comparable, V comparable](forwardMap map[K]V) *BiMap[K, V
 
 // Insert puts a key and value into the BiMap, provided its mutable. Also creates the reverse mapping from value to key.
 func (b *BiMap[K, V]) Insert(k K, v V) {
-	b.s.RLock()
+	b.s.Lock()
+	defer b.s.Unlock()
 	if b.immutable {
 		panic("Cannot modify immutable map")
 	}
-	b.s.RUnlock()
-
-	b.s.Lock()
-	defer b.s.Unlock()
-
 	if _, ok := b.forward[k]; ok {
 		delete(b.inverse, b.forward[k])
 	}
-
 	b.forward[k] = v
 	b.inverse[v] = k
 }
 
-// Exists checks whether or not a key exists in the BiMap
-func (b *BiMap[K, V]) Exists(k K) bool {
+// ExistsByKey checks whether or not a key exists in the BiMap.
+func (b *BiMap[K, V]) ExistsByKey(k K) bool {
 	b.s.RLock()
 	defer b.s.RUnlock()
 	_, ok := b.forward[k]
 	return ok
 }
 
-// ExistsInverse checks whether or not a value exists in the BiMap
-func (b *BiMap[K, V]) ExistsInverse(k V) bool {
+// Exists checks whether or not a key exists in the BiMap.
+//
+// Deprecated: Use ExistsByKey instead.
+func (b *BiMap[K, V]) Exists(k K) bool { return b.ExistsByKey(k) }
+
+// ExistsByValue checks whether or not a value exists in the BiMap.
+func (b *BiMap[K, V]) ExistsByValue(k V) bool {
 	b.s.RLock()
 	defer b.s.RUnlock()
-
 	_, ok := b.inverse[k]
 	return ok
 }
 
-// Get returns the value for a given key in the BiMap and whether or not the element was present.
-func (b *BiMap[K, V]) Get(k K) (V, bool) {
-	if !b.Exists(k) {
-		return *new(V), false
-	}
+// ExistsInverse checks whether or not a value exists in the BiMap.
+//
+// Deprecated: Use ExistsByValue instead.
+func (b *BiMap[K, V]) ExistsInverse(k V) bool { return b.ExistsByValue(k) }
+
+// GetByKey returns the value for a given key in the BiMap and whether or not the element was present.
+func (b *BiMap[K, V]) GetByKey(k K) (V, bool) {
 	b.s.RLock()
 	defer b.s.RUnlock()
-	return b.forward[k], true
+	v, ok := b.forward[k]
+	return v, ok
+}
+
+// Get returns the value for a given key in the BiMap and whether or not the element was present.
+//
+// Deprecated: Use GetByKey instead.
+func (b *BiMap[K, V]) Get(k K) (V, bool) { return b.GetByKey(k) }
+
+// GetByValue returns the key for a given value in the BiMap and whether or not the element was present.
+func (b *BiMap[K, V]) GetByValue(v V) (K, bool) {
+	b.s.RLock()
+	defer b.s.RUnlock()
+	k, ok := b.inverse[v]
+	return k, ok
 }
 
 // GetInverse returns the key for a given value in the BiMap and whether or not the element was present.
-func (b *BiMap[K, V]) GetInverse(v V) (K, bool) {
-	if !b.ExistsInverse(v) {
-		return *new(K), false
-	}
-	b.s.RLock()
-	defer b.s.RUnlock()
-	return b.inverse[v], true
+//
+// Deprecated: Use GetByValue instead.
+func (b *BiMap[K, V]) GetInverse(v V) (K, bool) { return b.GetByValue(v) }
 
+// GetByKeyWithFallback returns the value for k, or fallback if k is not present.
+func (b *BiMap[K, V]) GetByKeyWithFallback(k K, fallback V) V {
+	if v, ok := b.GetByKey(k); ok {
+		return v
+	}
+	return fallback
 }
 
-// Delete removes a key-value pair from the BiMap for a given key. Returns if the key doesn't exist
-func (b *BiMap[K, V]) Delete(k K) {
-	b.s.RLock()
+// GetByValueWithFallback returns the key for v, or fallback if v is not present.
+func (b *BiMap[K, V]) GetByValueWithFallback(v V, fallback K) K {
+	if k, ok := b.GetByValue(v); ok {
+		return k
+	}
+	return fallback
+}
+
+// DeleteByKey removes a key-value pair from the BiMap for a given key. Returns if the key doesn't exist.
+func (b *BiMap[K, V]) DeleteByKey(k K) {
+	b.s.Lock()
+	defer b.s.Unlock()
 	if b.immutable {
 		panic("Cannot modify immutable map")
 	}
-	b.s.RUnlock()
-
-	if !b.Exists(k) {
+	val, ok := b.forward[k]
+	if !ok {
 		return
 	}
-	val, _ := b.Get(k)
-	b.s.Lock()
-	defer b.s.Unlock()
 	delete(b.forward, k)
 	delete(b.inverse, val)
 }
 
-// DeleteInverse emoves a key-value pair from the BiMap for a given value. Returns if the value doesn't exist
-func (b *BiMap[K, V]) DeleteInverse(v V) {
-	b.s.RLock()
+// Delete removes a key-value pair from the BiMap for a given key. Returns if the key doesn't exist.
+//
+// Deprecated: Use DeleteByKey instead.
+func (b *BiMap[K, V]) Delete(k K) { b.DeleteByKey(k) }
+
+// DeleteByValue removes a key-value pair from the BiMap for a given value. Returns if the value doesn't exist.
+func (b *BiMap[K, V]) DeleteByValue(v V) {
+	b.s.Lock()
+	defer b.s.Unlock()
 	if b.immutable {
 		panic("Cannot modify immutable map")
 	}
-	b.s.RUnlock()
-
-	if !b.ExistsInverse(v) {
+	key, ok := b.inverse[v]
+	if !ok {
 		return
 	}
-
-	key, _ := b.GetInverse(v)
-	b.s.Lock()
-	defer b.s.Unlock()
 	delete(b.inverse, v)
 	delete(b.forward, key)
-
 }
+
+// DeleteInverse removes a key-value pair from the BiMap for a given value. Returns if the value doesn't exist.
+//
+// Deprecated: Use DeleteByValue instead.
+func (b *BiMap[K, V]) DeleteInverse(v V) { b.DeleteByValue(v) }
 
 // Size returns the number of elements in the bimap
 func (b *BiMap[K, V]) Size() int {
@@ -132,6 +159,22 @@ func (b *BiMap[K, V]) MakeImmutable() {
 	b.s.Lock()
 	defer b.s.Unlock()
 	b.immutable = true
+}
+
+// Freeze returns a new ImmutableBiMap with a snapshot of the current state.
+// The original BiMap is unaffected and remains mutable.
+func (b *BiMap[K, V]) Freeze() *ImmutableBiMap[K, V] {
+	b.s.RLock()
+	defer b.s.RUnlock()
+	forward := make(map[K]V, len(b.forward))
+	inverse := make(map[V]K, len(b.inverse))
+	for k, v := range b.forward {
+		forward[k] = v
+	}
+	for v, k := range b.inverse {
+		inverse[v] = k
+	}
+	return &ImmutableBiMap[K, V]{forward: forward, inverse: inverse}
 }
 
 // GetInverseMap returns a regular go map mapping from the BiMap's values to its keys
